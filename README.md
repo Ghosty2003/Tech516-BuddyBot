@@ -158,20 +158,10 @@ The YOLO v11 nano weights (`yolo11n.pt`) are downloaded automatically by `ultral
 
 ### 4.4 Running the Nodes
 
-Open four separate terminals:
+Open one terminal with ros2 after build:
 
 ```bash
-# Terminal 1 – Person tracker
-python3 tracker.py
-
-# Terminal 2 – Action recognition
-python3 action_publisher.py
-
-# Terminal 3 – FSM follower
-python3 follower_fsm_v2.py
-
-# Terminal 4 – Platform height controller
-python3 platform_ctrl.py
+ros2 launch buddybot launch.launch.py
 ```
 
 ---
