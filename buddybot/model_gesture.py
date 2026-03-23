@@ -9,7 +9,7 @@ import mediapipe as mp
 import time
 
 # -----------------------------
-# 模型定义
+# Model Definition
 # -----------------------------
 class MLP(nn.Module):
     def __init__(self, input_size, num_classes):
@@ -26,22 +26,22 @@ class MLP(nn.Module):
         return self.net(x)
 
 # -----------------------------
-# ROS2 节点
+# ROS2 Node
 # -----------------------------
 class HumanActionPublisher(Node):
     def __init__(self, model_path, label_classes, feature_size):
         super().__init__('human_action_publisher')
         self.pub = self.create_publisher(String, '/human_action', 10)
-        self.timer = self.create_timer(0.05, self.timer_callback)  # 20Hz 采集帧
+        self.timer = self.create_timer(0.05, self.timer_callback)  # 20Hz frame capture
 
-        # 初始化 MediaPipe Pose
+        # Initialize MediaPipe Pose
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(static_image_mode=False)
 
-        # GPU
+        # GPU settings
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # 加载模型
+        # Load Model
         self.model = MLP(input_size=feature_size, num_classes=len(label_classes)).to(self.device)
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
@@ -49,17 +49,17 @@ class HumanActionPublisher(Node):
         self.label_classes = label_classes
         self.feature_size = feature_size
 
-        # 摄像头
+        # Camera setup
         self.cap = cv2.VideoCapture(0)
 
-        # 上一次发布时间
+        # Last publication tracking
         self.last_publish_time = 0.0
-        self.publish_interval = 1.0  # 每秒发布一次
+        self.publish_interval = 1.0  # Publish once per second
 
     def timer_callback(self):
         current_time = time.time()
         if current_time - self.last_publish_time < self.publish_interval:
-            return  # 不到 1 秒，不预测
+            return  # Skip prediction if less than 1 second has passed
 
         ret, frame = self.cap.read()
         if not ret:
@@ -68,7 +68,7 @@ class HumanActionPublisher(Node):
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.pose.process(image)
 
-        # 提取特征
+        # Feature extraction
         feature = self.extract_features(results)
         if feature is not None:
             x_input = torch.tensor([feature], dtype=torch.float32).to(self.device)
@@ -77,13 +77,13 @@ class HumanActionPublisher(Node):
                 action_idx = pred.argmax(1).item()
                 action_label = self.label_classes[action_idx]
 
-            # 发布动作
+            # Publish action
             msg = String()
             msg.data = action_label
             self.pub.publish(msg)
             self.get_logger().info(f'Predicted action: {action_label}')
 
-            # 更新时间
+            # Update time
             self.last_publish_time = current_time
         else:
             self.get_logger().info('No human detected')
@@ -106,7 +106,7 @@ class HumanActionPublisher(Node):
 def main(args=None):
     rclpy.init(args=args)
     model_path = 'pose_model.pth'
-    feature_size = 66  # 33 keypoints * 2
+    feature_size = 66  # 33 keypoints * 2 coordinates (x, y)
     label_classes = ['Wave', 'Reach Out', 'Sitting', 'Standing', 'Reach']
     node = HumanActionPublisher(model_path, label_classes, feature_size)
     rclpy.spin(node)

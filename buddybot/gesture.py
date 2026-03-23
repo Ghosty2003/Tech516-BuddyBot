@@ -1,7 +1,6 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from sensor_msgs.msg import Image
 
 import cv2
 import mediapipe as mp
@@ -9,8 +8,9 @@ import numpy as np
 from cv_bridge import CvBridge
 from sensor_msgs.msg import CompressedImage
 
+
 # -----------------------------
-# 角度计算
+# Angle Calculation
 # -----------------------------
 def calculate_angle(a, b, c):
     a = np.array([a.x, a.y])
@@ -33,10 +33,10 @@ class HumanActionPublisher(Node):
     def __init__(self):
         super().__init__('human_action_publisher')
 
-        # ✅ 发布动作
+        # Action Publisher
         self.pub = self.create_publisher(String, '/human_action', 10)
 
-        # ✅ 订阅摄像头
+        # Camera Subscription
         self.sub = self.create_subscription(
             CompressedImage,
             '/image_raw/compressed',
@@ -50,24 +50,37 @@ class HumanActionPublisher(Node):
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(static_image_mode=False)
 
-        self.last_publish_time = self.get_clock().now()
-
         self.get_logger().info("Human Action Publisher Started")
 
+        # -----------------------------
+        # Stability Control (Debouncing)
+        # -----------------------------
+        self.last_detected = None
+        self.detect_count = 0
+
+        # -----------------------------
+        # Publishing Control (Cooldown)
+        # -----------------------------
+        self.last_published_pose = None
+        self.last_publish_time = self.get_clock().now()
+
+        # Frame rate control
+        self.last_time = self.get_clock().now()
+
     # -----------------------------
-    # 图像回调
+    # Image Callback
     # -----------------------------
     def image_callback(self, msg: CompressedImage):
 
-        # ✅ 限制1秒一次（可选）
         now = self.get_clock().now()
-        if hasattr(self, "last_time"):
-            if (now - self.last_time).nanoseconds < 1e9:
-                return
+
+        # Limit Frequency (5Hz)
+        if (now - self.last_time).nanoseconds < 0.2e9:
+            return
         self.last_time = now
 
         # -----------------------------
-        # ✅ 解码 compressed image
+        # Decode Image
         # -----------------------------
         np_arr = np.frombuffer(msg.data, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -75,11 +88,12 @@ class HumanActionPublisher(Node):
         if frame is None:
             self.get_logger().warn("Failed to decode image")
             return
-        
+
         cv2.imshow("camera", frame)
         cv2.waitKey(1)
+
         # -----------------------------
-        # MediaPipe
+        # MediaPipe Processing
         # -----------------------------
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.pose.process(image_rgb)
@@ -100,13 +114,13 @@ class HumanActionPublisher(Node):
             left_ankle = lm[self.mp_pose.PoseLandmark.LEFT_ANKLE]
             right_ankle = lm[self.mp_pose.PoseLandmark.RIGHT_ANKLE]
 
-            # 角度
+            # Angle Calculation
             left_leg_angle = calculate_angle(left_hip, left_knee, left_ankle)
             right_leg_angle = calculate_angle(right_hip, right_knee, right_ankle)
             arm_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
 
             # -----------------------------
-            # 动作判断
+            # Action Recognition Logic
             # -----------------------------
             if right_wrist.y < right_shoulder.y:
                 pose_label = "Wave"
@@ -118,17 +132,41 @@ class HumanActionPublisher(Node):
                 pose_label = "Standing"
 
         # -----------------------------
-        # 发布
+        # consecutive detections (Debouncing)
+        # -----------------------------
+        if pose_label == self.last_detected:
+            self.detect_count += 1
+        else:
+            self.last_detected = pose_label
+            self.detect_count = 1
+
+        if self.detect_count < 3:
+            return
+
+        # -----------------------------
+        # ✅ Cooldown mechanism (Sit / Stand 3 seconds)
+        # -----------------------------
+        if pose_label in ["Sitting", "Standing"]:
+            dt = (now - self.last_publish_time).nanoseconds / 1e9
+            if pose_label == self.last_published_pose and dt < 3.0:
+                self.get_logger().info(f"{pose_label} cooling down...")
+                return
+
+        # -----------------------------
+        # Publish Action
         # -----------------------------
         out_msg = String()
         out_msg.data = pose_label
         self.pub.publish(out_msg)
 
-        self.get_logger().info(f"Action: {pose_label}")
+        self.last_published_pose = pose_label
+        self.last_publish_time = now
+
+        self.get_logger().info(f"Published Action: {pose_label}")
 
 
 # -----------------------------
-# main
+# Main
 # -----------------------------
 def main(args=None):
     rclpy.init(args=args)

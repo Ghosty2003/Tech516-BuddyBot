@@ -1,6 +1,7 @@
 from setuptools import find_packages, setup
+import os
 
-package_name = 'yolo_detect'
+package_name = 'buddybot'
 
 setup(
     name=package_name,
@@ -10,6 +11,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), ['launch/launch.launch.py'])
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -24,12 +26,12 @@ setup(
     },
     entry_points={
         'console_scripts': [
-           'yolo = yolo_detect.yolo:main',
-           'follow = yolo_detect.follow:main', 
-           'follow_face = yolo_detect.follow_face:main', 
-           'manual = yolo_detect.manual_action_input:main',
-           'platform = yolo_detect.platform_height_controller:main',
-           'gesture = yolo_detect.gesture:main'
+           'yolo = buddybot.yolo:main',
+           'follow = buddybot.follow:main', 
+           'follow_face = buddybot.follow_face:main', 
+           'manual = buddybot.manual_action_input:main',
+           'platform = buddybot.platform_height_controller:main',
+           'gesture = buddybot.gesture:main'
         ],
     },
 )
